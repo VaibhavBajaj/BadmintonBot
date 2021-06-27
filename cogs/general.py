@@ -90,6 +90,11 @@ class GeneralCog(commands.Cog, name='General'):
             await user.send(content=str(e))
             print(traceback.format_exc())
 
+    @commands.Cog.listener()
+    async def on_message_delete(self, message: discord.Message):
+        if message.author != self.bot.user or not message.content.startswith("**__"):
+            return
+        self.scheduler.delete_schedule(message.content)
 
 # setup for adding cog to the bot
 def setup(bot: commands.Bot):

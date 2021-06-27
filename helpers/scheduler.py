@@ -48,6 +48,13 @@ class Scheduler:
         self.sessions[key] = [Slot(LEVELS[0]), Slot(LEVELS[1])]
         return content
 
+    def delete_schedule(self, content):
+        date, start_time, end_time, location = self.__get_schedule_key(content)
+        key = SessionKey(date=date, start_time=start_time, end_time=end_time, location=location)
+        if key in self.sessions:
+            self.sessions[key] = None
+            del self.sessions[key]
+
     # Add user mention to a specific slot in schedule
     def add_schedule_mention(self, content: str, slot_idx: int, user: Union[discord.Member, discord.User]):
         date, start_time, end_time, location = self.__get_schedule_key(content)
@@ -100,17 +107,27 @@ class Scheduler:
         if slot_idx > len(slots) or slots[slot_idx - 1].count == 0:
             raise Exception(IMPOSSIBLE_EXCEPTION)
 
-        slots[slot_idx - 1].count -= 1
+        slot = slots[slot_idx - 1]
+        slot.count -= 1
+        if slot.count == 3 and not slot.booked:
+            content_lines = content.split('\n')
+            for i in range(len(content_lines)):
+                if content_lines[i].startswith("Slot {slot_idx}".format(slot_idx=slot_idx)):
+                    content_lines[i+2] = '**Status**: Awaiting more players'
+
         content = content.replace(user.mention, '')
         return content
 
     # Book a slot under a user specifying the court number
     def book_slot(self, content: str, slot_idx: str, court_no: str, user: Union[discord.Member, discord.User]):
+        slot_idx = int(slot_idx)
         date, start_time, end_time, location = self.__get_schedule_key(content)
         key = SessionKey(date=date, start_time=start_time, end_time=end_time, location=location)
-        if int(slot_idx) > len(self.sessions[key]) or int(slot_idx) <= 0:
+        if int(slot_idx) > len(self.sessions[key]) or slot_idx <= 0:
             raise Exception(SLOT_NOT_FOUND.format(slot_idx=slot_idx, date=date, location=location))
 
+        slots = self.sessions[key]
+        slots[slot_idx - 1].booked = True
         content_lines = content.split('\n')
         for i in range(len(content_lines)):
             if content_lines[i].startswith("Slot {slot_idx}".format(slot_idx=slot_idx)):
