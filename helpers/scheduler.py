@@ -95,10 +95,10 @@ class Scheduler:
         if slot_idx <= 0:
             raise Exception(SLOT_NOT_FOUND.format(slot_idx=slot_idx, date=date, location=location))
         if key not in self.sessions:
-            raise IMPOSSIBLE_EXCEPTION
+            raise Exception(IMPOSSIBLE_EXCEPTION)
         slots = self.sessions[key]
         if slot_idx > len(slots) or slots[slot_idx - 1].count == 0:
-            raise IMPOSSIBLE_EXCEPTION
+            raise Exception(IMPOSSIBLE_EXCEPTION)
 
         slots[slot_idx - 1].count -= 1
         content = content.replace(user.mention, '')
