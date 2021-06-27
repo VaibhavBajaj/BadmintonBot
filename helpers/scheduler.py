@@ -99,3 +99,18 @@ class Scheduler:
         slots[slot_idx - 1].count -= 1
         content = content.replace(user.mention, '')
         return content
+
+    # Book a slot under a user specifying the court number
+    def book_slot(self, content: str, slot_idx: str, court_no: str, user: Union[discord.Member, discord.User]):
+        date, start_time, end_time, location = self.__get_schedule_key(content)
+        key = SessionKey(date=date, start_time=start_time, end_time=end_time, location=location)
+        if int(slot_idx) > len(self.sessions[key]) or int(slot_idx) <= 0:
+            raise Exception(SLOT_NOT_FOUND.format(slot_idx=slot_idx, date=date, location=location))
+
+        content_lines = content.split('\n')
+        for i in range(len(content_lines)):
+            if content_lines[i].startswith("Slot {slot_idx}".format(slot_idx=slot_idx)):
+                content_lines[i + 2] = '**Status**: Court #{court_no} booked by {user}.'\
+                    .format(court_no=court_no, user=user.mention)
+        content = '\n'.join(content_lines)
+        return content
