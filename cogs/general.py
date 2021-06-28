@@ -1,8 +1,11 @@
+import asyncio
 import traceback
 from typing import Union
 
 import discord
 from discord.ext import commands
+
+from helpers.exceptions import TIMEOUT
 from helpers.scheduler import Scheduler
 
 
@@ -35,10 +38,13 @@ class GeneralCog(commands.Cog, name='General'):
         def check(response: discord.Message):
             return response.content.isnumeric()
 
-        await user.send("What slot number did you book?")
-        slot_message = await self.bot.wait_for(event='message', check=check)
-        await user.send("What court number did you book?")
-        court_message = await self.bot.wait_for(event='message', check=check)
+        try:
+            await user.send("What slot number did you book?")
+            slot_message = await self.bot.wait_for(event='message', check=check, timeout=30.0)
+            await user.send("What court number did you book?")
+            court_message = await self.bot.wait_for(event='message', check=check, timeout=30.0)
+        except asyncio.TimeoutError:
+            raise Exception(TIMEOUT)
         content = self.scheduler.book_slot(reaction.message.content, slot_message.content, court_message.content, user)
         await reaction.message.edit(content=content)
 
@@ -76,6 +82,7 @@ class GeneralCog(commands.Cog, name='General'):
                     await self.__add_slot_mention(reaction, user, slot_idx)
         except Exception as e:
             await user.send(content=str(e))
+            await reaction.remove(user)
             print(traceback.format_exc())
 
     @commands.Cog.listener()
@@ -88,6 +95,7 @@ class GeneralCog(commands.Cog, name='General'):
             await reaction.message.edit(content=content)
         except Exception as e:
             await user.send(content=str(e))
+            await reaction.remove(user)
             print(traceback.format_exc())
 
     @commands.Cog.listener()

@@ -3,8 +3,7 @@ from helpers.session import SessionKey, Slot
 
 import discord
 import re
-from helpers.exceptions import SESSION_EXISTS, SLOT_FULL, SLOT_NOT_FOUND, SESSION_NOT_FOUND, IMPOSSIBLE_EXCEPTION, \
-    MULTIPLE_SIGN_UP
+from helpers.exceptions import SESSION_EXISTS, SLOT_FULL, SLOT_NOT_FOUND, SESSION_NOT_FOUND, MULTIPLE_SIGN_UP
 
 LEVELS = ['Rookie / Amateur', 'Intermediate / Advanced']
 
@@ -102,10 +101,11 @@ class Scheduler:
         if slot_idx <= 0:
             raise Exception(SLOT_NOT_FOUND.format(slot_idx=slot_idx, date=date, location=location))
         if key not in self.sessions:
-            raise Exception(IMPOSSIBLE_EXCEPTION)
+            raise Exception(SESSION_NOT_FOUND
+                            .format(date=date, start_time=start_time, end_time=end_time, location=location))
         slots = self.sessions[key]
-        if slot_idx > len(slots) or slots[slot_idx - 1].count == 0:
-            raise Exception(IMPOSSIBLE_EXCEPTION)
+        if user.mention not in content or slot_idx > len(slots):
+            return
 
         slot = slots[slot_idx - 1]
         slot.count -= 1
