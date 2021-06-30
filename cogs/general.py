@@ -34,7 +34,7 @@ class GeneralCog(commands.Cog, name='General'):
             return slot_emoji[emoji]
         return None
 
-    async def __book_court(self, reaction: discord.Reaction, user: Union[discord.Member, discord.User]):
+    async def __book_court(self, message: discord.Message, user: Union[discord.Member, discord.User]):
         def check(response: discord.Message):
             return response.content.isnumeric()
 
@@ -45,12 +45,12 @@ class GeneralCog(commands.Cog, name='General'):
             court_message = await self.bot.wait_for(event='message', check=check, timeout=30.0)
         except asyncio.TimeoutError:
             raise Exception(TIMEOUT)
-        content = self.scheduler.book_slot(reaction.message.content, slot_message.content, court_message.content, user)
-        await reaction.message.edit(content=content)
+        content = self.scheduler.book_slot(message.content, slot_message.content, court_message.content, user)
+        await message.edit(content=content)
 
-    async def __add_slot_mention(self, reaction: discord.Reaction, user: Union[discord.Member, discord.User], slot_idx: int):
-        content = self.scheduler.add_schedule_mention(reaction.message.content, slot_idx, user)
-        await reaction.message.edit(content=content)
+    async def __add_slot_mention(self, message: discord.Message, user: Union[discord.Member, discord.User], slot_idx: int):
+        content = self.scheduler.add_schedule_mention(message.content, slot_idx, user)
+        await message.edit(content=content)
 
     @commands.command(help='Check whether bot is alive')
     async def ping(self, ctx: commands.Context):
@@ -72,37 +72,52 @@ class GeneralCog(commands.Cog, name='General'):
             print(traceback.format_exc())
 
     @commands.Cog.listener()
-    async def on_reaction_add(self, reaction: discord.Reaction, user: Union[discord.Member, discord.User]):
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        channel = self.bot.get_channel(payload.channel_id)
+        message = await channel.fetch_message(payload.message_id)
+        user = self.bot.get_user(payload.user_id)
+        if not user:
+            user = await self.bot.fetch_user(payload.user_id)
+
+        if message.author != self.bot.user or channel.name.split('-')[1] != 'schedule':
+            return
+
         try:
-            if reaction.emoji == '🔖':
-                await self.__book_court(reaction, user)
+            if payload.emoji.name == '🔖':
+                await self.__book_court(message, user)
             else:
-                slot_idx = self.__parse_slot_reaction(reaction.emoji)
+                slot_idx = self.__parse_slot_reaction(payload.emoji.name)
                 if slot_idx is not None:
-                    await self.__add_slot_mention(reaction, user, slot_idx)
+                    await self.__add_slot_mention(message, user, slot_idx)
         except Exception as e:
             await user.send(content=str(e))
-            await reaction.remove(user)
+            await message.remove_reaction(payload.emoji, user)
             print(traceback.format_exc())
 
     @commands.Cog.listener()
-    async def on_reaction_remove(self, reaction: discord.Reaction, user: Union[discord.Member, discord.User]):
-        slot_idx = self.__parse_slot_reaction(reaction.emoji)
+    async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
+        channel = self.bot.get_channel(payload.channel_id)
+        message = await channel.fetch_message(payload.message_id)
+        user = self.bot.get_user(payload.user_id)
+        if not user:
+            user = await self.bot.fetch_user(payload.user_id)
+
+        if message.author != self.bot.user or channel.name.split('-')[1] != 'schedule':
+            return
+
+        slot_idx = self.__parse_slot_reaction(payload.emoji.name)
         if slot_idx is None:
             return
-        try:
-            content = self.scheduler.remove_schedule_mention(reaction.message.content, slot_idx, user)
-            await reaction.message.edit(content=content)
-        except Exception as e:
-            await user.send(content=str(e))
-            await reaction.remove(user)
-            print(traceback.format_exc())
+        content = self.scheduler.remove_schedule_mention(message.content, slot_idx, user)
+        if content != '':
+            await message.edit(content=content)
 
     @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message):
         if message.author != self.bot.user or not message.content.startswith("**__"):
             return
         self.scheduler.delete_schedule(message.content)
+
 
 # setup for adding cog to the bot
 def setup(bot: commands.Bot):

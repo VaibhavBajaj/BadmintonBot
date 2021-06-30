@@ -5,7 +5,7 @@ import discord
 import re
 from helpers.exceptions import SESSION_EXISTS, SLOT_FULL, SLOT_NOT_FOUND, SESSION_NOT_FOUND, MULTIPLE_SIGN_UP
 
-LEVELS = ['Rookie / Amateur', 'Intermediate / Advanced']
+LEVELS = ['Rookie / Amateur', 'Amateur / Intermediate', 'Intermediate / Advanced']
 
 SLOT_MESSAGE = '''
 Slot {slot_idx}: 
@@ -21,6 +21,9 @@ Slot 1:
 Level: Rookie / Amateur
 **Status:** Awaiting more players
 Slot 2: 
+Level: Amateur / Intermediate
+**Status:** Awaiting more players
+Slot 3: 
 Level: Intermediate / Advanced
 **Status:** Awaiting more players
 '''
@@ -44,7 +47,7 @@ class Scheduler:
             raise Exception(SESSION_EXISTS
                             .format(date=date, start_time=start_time, end_time=end_time, location=location))
 
-        self.sessions[key] = [Slot(LEVELS[0]), Slot(LEVELS[1])]
+        self.sessions[key] = [Slot(LEVELS[0]), Slot(LEVELS[1]), Slot(LEVELS[2])]
         return content
 
     def delete_schedule(self, content):
@@ -62,9 +65,6 @@ class Scheduler:
             raise Exception(SESSION_NOT_FOUND
                             .format(date=date, start_time=start_time, end_time=end_time, location=location))
 
-        if user.mention in content:
-            raise Exception(MULTIPLE_SIGN_UP.format(user=user.mention, date=date, location=location))
-
         slots = self.sessions[key]
         if slot_idx <= 0 or slot_idx > len(slots):
             raise Exception(SLOT_NOT_FOUND.format(slot_idx=slot_idx, date=date, location=location))
@@ -72,8 +72,13 @@ class Scheduler:
         if slot.count == 6:
             raise Exception(SLOT_FULL.format(slot_idx=slot_idx, date=date, location=location))
 
-        # Add user mention
+        # Check if user is in a slot already
         content_lines = content.split('\n')
+        for i in range(len(content_lines)):
+            if content_lines[i].startswith("Slot") and user.mention in content_lines[i]:
+                raise Exception(MULTIPLE_SIGN_UP.format(user=user.mention, date=date, location=location))
+
+        # Add user mention
         for i in range(len(content_lines)):
             if content_lines[i].startswith("Slot {slot_idx}".format(slot_idx=slot_idx)):
                 if slot.count > 0:
@@ -98,24 +103,27 @@ class Scheduler:
     def remove_schedule_mention(self, content: str, slot_idx: int, user: Union[discord.Member, discord.User]):
         date, start_time, end_time, location = self.__get_schedule_key(content)
         key = SessionKey(date=date, start_time=start_time, end_time=end_time, location=location)
-        if slot_idx <= 0:
-            raise Exception(SLOT_NOT_FOUND.format(slot_idx=slot_idx, date=date, location=location))
         if key not in self.sessions:
-            raise Exception(SESSION_NOT_FOUND
-                            .format(date=date, start_time=start_time, end_time=end_time, location=location))
+            return ''
         slots = self.sessions[key]
-        if user.mention not in content or slot_idx > len(slots):
-            return
+        if slot_idx <= 0 or slot_idx > len(slots):
+            return ''
 
         slot = slots[slot_idx - 1]
-        slot.count -= 1
-        if slot.count == 3 and not slot.booked:
-            content_lines = content.split('\n')
-            for i in range(len(content_lines)):
-                if content_lines[i].startswith("Slot {slot_idx}".format(slot_idx=slot_idx)):
+        content_lines = content.split('\n')
+        for i in range(len(content_lines)):
+            if content_lines[i].startswith("Slot {slot_idx}".format(slot_idx=slot_idx)):
+                if user.mention not in content_lines[i]:
+                    return ''
+                if (', ' + user.mention) in content_lines[i]:
+                    content_lines[i] = content_lines[i].replace(', ' + user.mention, '')
+                else:
+                    content_lines[i] = content_lines[i].replace(user.mention, '')
+                slot.count -= 1
+                if slot.count == 3 and not slot.booked:
                     content_lines[i+2] = '**Status**: Awaiting more players'
 
-        content = content.replace(user.mention, '')
+        content = '\n'.join(content_lines)
         return content
 
     # Book a slot under a user specifying the court number
