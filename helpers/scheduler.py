@@ -1,145 +1,133 @@
 from typing import Union
-from helpers.session import SessionKey, Slot
 
 import discord
 import re
-from helpers.exceptions import SESSION_EXISTS, SLOT_FULL, SLOT_NOT_FOUND, SESSION_NOT_FOUND, MULTIPLE_SIGN_UP
+from helpers.exceptions import SLOT_FULL, SLOT_NOT_FOUND, MULTIPLE_SIGN_UP
 
-LEVELS = ['Rookie / Amateur', 'Amateur / Intermediate', 'Intermediate / Advanced']
+LEVELS = ['Rookie / Amateur', 'Lower Intermediate', 'Upper Intermediate / Advanced']
 
+WAITING_STATUS = '**Status**: Awaiting more players'
+TO_BOOK_STATUS = '**Status**: To be booked'
+BOOKED_STATUS = '**Staus**: Court #{court_no} booked by {user}'
+
+SESSION_MESSAGE = '\\*\\*\\_\\_{date}\\_\\_\\*\\*, {start_time} to {end_time} at {location}'
 SLOT_MESSAGE = '''
 Slot {slot_idx}: 
 Level: {level}
 **Status:** Awaiting more players
 '''
-
-SESSION_MESSAGE = '\\*\\*\\_\\_{date}\\_\\_\\*\\*, {start_time} to {end_time} at {location}'
-
 SCHEDULE_MESSAGE = '''
-**__{date}__**, {start_time} to {end_time} at {location}
+**__{{date}}__**, {{start_time}} to {{end_time}} at {{location}}
 Slot 1: 
-Level: Rookie / Amateur
+Level: {level0}
 **Status:** Awaiting more players
 Slot 2: 
-Level: Amateur / Intermediate
+Level: {level1}
 **Status:** Awaiting more players
 Slot 3: 
-Level: Intermediate / Advanced
+Level: {level2}
 **Status:** Awaiting more players
-'''
+'''.format(level0=LEVELS[0], level1=LEVELS[1], level2=LEVELS[2])
 
 
 # Helper class for creating and tracking scheduling messages
 class Scheduler:
-    def __init__(self):
-        self.sessions = dict()
-
     @staticmethod
     def __get_schedule_key(content):
         session_data = content.split('\n')[0]
         regex = re.sub(r'{(.+?)}', r'(?P<_\1>.+)', SESSION_MESSAGE)
         return list(re.search(regex, session_data).groups())
 
-    def create_schedule(self, date: str, start_time: str, end_time: str, location: str):
-        content = SCHEDULE_MESSAGE.format(date=date, start_time=start_time, end_time=end_time, location=location)
-        key = SessionKey(date=date, start_time=start_time, end_time=end_time, location=location)
-        if key in self.sessions:
-            raise Exception(SESSION_EXISTS
-                            .format(date=date, start_time=start_time, end_time=end_time, location=location))
-
-        self.sessions[key] = [Slot(LEVELS[0]), Slot(LEVELS[1]), Slot(LEVELS[2])]
-        return content
-
-    def delete_schedule(self, content):
-        date, start_time, end_time, location = self.__get_schedule_key(content)
-        key = SessionKey(date=date, start_time=start_time, end_time=end_time, location=location)
-        if key in self.sessions:
-            self.sessions[key] = None
-            del self.sessions[key]
+    @staticmethod
+    def create_schedule(date: str, start_time: str, end_time: str, location: str):
+        return SCHEDULE_MESSAGE.format(date=date, start_time=start_time, end_time=end_time, location=location)
 
     # Add user mention to a specific slot in schedule
-    def add_schedule_mention(self, content: str, slot_idx: int, user: Union[discord.Member, discord.User]):
-        date, start_time, end_time, location = self.__get_schedule_key(content)
-        key = SessionKey(date=date, start_time=start_time, end_time=end_time, location=location)
-        if key not in self.sessions:
-            raise Exception(SESSION_NOT_FOUND
-                            .format(date=date, start_time=start_time, end_time=end_time, location=location))
+    @staticmethod
+    def add_schedule_mention(content: str, slot_idx: int, user: Union[discord.Member, discord.User]):
+        date, _, _, location = Scheduler.__get_schedule_key(content)
 
-        slots = self.sessions[key]
-        if slot_idx <= 0 or slot_idx > len(slots):
+        idx = -1
+        prefix = f"Slot {slot_idx}: ".format(slot_idx=slot_idx)
+        content_lines = content.split('\n')
+
+        for i in range(len(content_lines)):
+            if content_lines[i].startswith(prefix):
+                idx = i
+                break
+
+        if idx == -1:
             raise Exception(SLOT_NOT_FOUND.format(slot_idx=slot_idx, date=date, location=location))
-        slot = slots[slot_idx - 1]
-        if slot.count == 6:
+
+        attendees = content_lines[idx][len(prefix):].split(', ')
+        if len(attendees) == 1 and attendees[0] == '':
+            attendees = []
+        # Check if slot is full
+        if len(attendees) == 6:
             raise Exception(SLOT_FULL.format(slot_idx=slot_idx, date=date, location=location))
 
-        # Check if user is in a slot already
-        content_lines = content.split('\n')
-        for i in range(len(content_lines)):
-            if content_lines[i].startswith("Slot") and user.mention in content_lines[i]:
-                raise Exception(MULTIPLE_SIGN_UP.format(user=user.mention, date=date, location=location))
+        curr_slot = 0
+        # Check if user is in another slot and find current slot number
+        for slot in content_lines:
+            if slot.startswith("Slot"):
+                curr_slot += 1
+                if user.mention in slot:
+                    raise Exception(MULTIPLE_SIGN_UP.format(user=user.mention, date=date, location=location))
 
-        # Add user mention
-        for i in range(len(content_lines)):
-            if content_lines[i].startswith("Slot {slot_idx}".format(slot_idx=slot_idx)):
-                if slot.count > 0:
-                    content_lines[i] += ', '
-                content_lines[i] += user.mention
-                slot.count += 1
-                # If slot has 4 players and is not currently booked, update status to "To be booked"
-                if slot.count == 4 and not slot.booked:
-                    content_lines[i+2] = '**Status**: To be booked'
+        # Add user to slot
+        attendees.append(user.mention)
+        content_lines[idx] = prefix + ', '.join(attendees)
+        if len(attendees) == 4 and content_lines[idx+2] == WAITING_STATUS:
+            content_lines[idx+2] = TO_BOOK_STATUS
+            # Add another slot if there is no empty slot and
+            if not content_lines[idx+1].endswith('*'):
+                level = content_lines[idx+1][len('Level: '):]
+                content += SLOT_MESSAGE.format(level=level, slot_idx=curr_slot + 1)
+                content_lines[idx+1] += '*'
         content = '\n'.join(content_lines)
-
-        # Add another slot if attendees in a slot is 4.
-        if slot.count == 4 and not slot.slot_added:
-            if not slot.slot_added:
-                slot.slot_added = True
-                slots.append(Slot(level=slot.level))
-                slot_idx = len(slots)
-                content += SLOT_MESSAGE.format(level=slot.level, slot_idx=slot_idx)
         return content
 
     # Remove user mention from schedule
-    def remove_schedule_mention(self, content: str, slot_idx: int, user: Union[discord.Member, discord.User]):
-        date, start_time, end_time, location = self.__get_schedule_key(content)
-        key = SessionKey(date=date, start_time=start_time, end_time=end_time, location=location)
-        if key not in self.sessions:
-            return ''
-        slots = self.sessions[key]
-        if slot_idx <= 0 or slot_idx > len(slots):
-            return ''
-
-        slot = slots[slot_idx - 1]
+    @staticmethod
+    def remove_schedule_mention(content: str, slot_idx: int, user: Union[discord.Member, discord.User]):
+        idx = -1
+        prefix = f"Slot {slot_idx}: ".format(slot_idx=slot_idx)
         content_lines = content.split('\n')
         for i in range(len(content_lines)):
-            if content_lines[i].startswith("Slot {slot_idx}".format(slot_idx=slot_idx)):
-                if user.mention not in content_lines[i]:
-                    return ''
-                if (', ' + user.mention) in content_lines[i]:
-                    content_lines[i] = content_lines[i].replace(', ' + user.mention, '')
-                else:
-                    content_lines[i] = content_lines[i].replace(user.mention, '')
-                slot.count -= 1
-                if slot.count == 3 and not slot.booked:
-                    content_lines[i+2] = '**Status**: Awaiting more players'
+            if content_lines[i].startswith(prefix):
+                idx = i
+                break
 
+        if idx == -1:
+            return ''
+
+        # Find attendees and remove user
+        attendees = content_lines[idx][len(prefix):].split(', ')
+        attendees.remove(user.mention)
+        # Check if slot is now waiting for more players
+        if len(attendees) == 3 and content_lines[idx+2] == TO_BOOK_STATUS:
+            content_lines[idx+2] = WAITING_STATUS
+        content_lines[idx] = prefix + ', '.join(attendees)
         content = '\n'.join(content_lines)
         return content
 
     # Book a slot under a user specifying the court number
-    def book_slot(self, content: str, slot_idx: str, court_no: str, user: Union[discord.Member, discord.User]):
-        slot_idx = int(slot_idx)
-        date, start_time, end_time, location = self.__get_schedule_key(content)
-        key = SessionKey(date=date, start_time=start_time, end_time=end_time, location=location)
-        if int(slot_idx) > len(self.sessions[key]) or slot_idx <= 0:
+    @staticmethod
+    def book_slot(content: str, slot_idx: str, court_no: str, user: Union[discord.Member, discord.User]):
+        date, _, _, location = Scheduler.__get_schedule_key(content)
+
+        idx = -1
+        prefix = f"Slot {slot_idx}: ".format(slot_idx=slot_idx)
+        content_lines = content.split('\n')
+
+        for i in range(len(content_lines)):
+            if content_lines[i].startswith(prefix):
+                idx = i
+                break
+
+        if idx == -1:
             raise Exception(SLOT_NOT_FOUND.format(slot_idx=slot_idx, date=date, location=location))
 
-        slots = self.sessions[key]
-        slots[slot_idx - 1].booked = True
-        content_lines = content.split('\n')
-        for i in range(len(content_lines)):
-            if content_lines[i].startswith("Slot {slot_idx}".format(slot_idx=slot_idx)):
-                content_lines[i + 2] = '**Status**: Court #{court_no} booked by {user}.'\
-                    .format(court_no=court_no, user=user.mention)
+        content_lines[idx + 2] = BOOKED_STATUS.format(court_no=court_no, user=user.mention)
         content = '\n'.join(content_lines)
         return content

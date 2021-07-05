@@ -13,7 +13,6 @@ from helpers.scheduler import Scheduler
 class GeneralCog(commands.Cog, name='General'):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.scheduler = Scheduler()
 
     @staticmethod
     def __parse_slot_reaction(emoji: str):
@@ -45,11 +44,7 @@ class GeneralCog(commands.Cog, name='General'):
             court_message = await self.bot.wait_for(event='message', check=check, timeout=30.0)
         except asyncio.TimeoutError:
             raise Exception(TIMEOUT)
-        content = self.scheduler.book_slot(message.content, slot_message.content, court_message.content, user)
-        await message.edit(content=content)
-
-    async def __add_slot_mention(self, message: discord.Message, user: Union[discord.Member, discord.User], slot_idx: int):
-        content = self.scheduler.add_schedule_mention(message.content, slot_idx, user)
+        content = Scheduler.book_slot(message.content, slot_message.content, court_message.content, user)
         await message.edit(content=content)
 
     @commands.command(help='Check whether bot is alive')
@@ -63,7 +58,7 @@ class GeneralCog(commands.Cog, name='General'):
     ''')
     async def schedule(self, ctx: commands.Context, date: str, start_time: str, end_time: str, location: str):
         try:
-            content = self.scheduler.create_schedule(date, start_time, end_time, location)
+            content = Scheduler.create_schedule(date, start_time, end_time, location)
             schedule_channel_name = str(ctx.channel).split('-')[0] + '-schedule'
             schedule_channel = discord.utils.get(ctx.guild.channels, name=schedule_channel_name)
             await schedule_channel.send(content)
@@ -88,7 +83,8 @@ class GeneralCog(commands.Cog, name='General'):
             else:
                 slot_idx = self.__parse_slot_reaction(payload.emoji.name)
                 if slot_idx is not None:
-                    await self.__add_slot_mention(message, user, slot_idx)
+                    content = Scheduler.add_schedule_mention(message.content, slot_idx, user)
+                    await message.edit(content=content)
         except Exception as e:
             await user.send(content=str(e))
             await message.remove_reaction(payload.emoji, user)
@@ -98,25 +94,19 @@ class GeneralCog(commands.Cog, name='General'):
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
         channel = self.bot.get_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
+        if message.author != self.bot.user or channel.name.split('-')[1] != 'schedule':
+            return
+
         user = self.bot.get_user(payload.user_id)
         if not user:
             user = await self.bot.fetch_user(payload.user_id)
 
-        if message.author != self.bot.user or channel.name.split('-')[1] != 'schedule':
-            return
-
         slot_idx = self.__parse_slot_reaction(payload.emoji.name)
         if slot_idx is None:
             return
-        content = self.scheduler.remove_schedule_mention(message.content, slot_idx, user)
+        content = Scheduler.remove_schedule_mention(message.content, slot_idx, user)
         if content != '':
             await message.edit(content=content)
-
-    @commands.Cog.listener()
-    async def on_message_delete(self, message: discord.Message):
-        if message.author != self.bot.user or not message.content.startswith("**__"):
-            return
-        self.scheduler.delete_schedule(message.content)
 
 
 # setup for adding cog to the bot
