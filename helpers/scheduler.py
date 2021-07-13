@@ -11,8 +11,7 @@ TO_BOOK_STATUS = '**Status**: To be booked'
 BOOKED_STATUS = '**Staus**: Court #{court_no} booked by {user}'
 
 SESSION_MESSAGE = '\\*\\*\\_\\_{date}\\_\\_\\*\\*, {start_time} to {end_time} at {location}'
-SLOT_MESSAGE = '''
-Slot {slot_idx}: 
+SLOT_MESSAGE = '''Slot {slot_idx}: 
 Level: {level}
 **Status:** Awaiting more players
 '''
