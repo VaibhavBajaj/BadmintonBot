@@ -77,13 +77,15 @@ class Scheduler:
         # Add user to slot
         attendees.append(user.mention)
         content_lines[idx] = prefix + ', '.join(attendees)
-        if len(attendees) == 4 and content_lines[idx+2] == WAITING_STATUS:
-            content_lines[idx+2] = TO_BOOK_STATUS
-            # Add another slot if there is no empty slot and
+        if len(attendees) == 4:
+            if content_lines[idx+2] == WAITING_STATUS:
+                content_lines[idx+2] = TO_BOOK_STATUS
+
+            # Add another slot if there is no empty slot
             if not content_lines[idx+1].endswith('*'):
                 level = content_lines[idx+1][len('Level: '):]
-                content += SLOT_MESSAGE.format(level=level, slot_idx=curr_slot + 1)
                 content_lines[idx+1] += '*'
+                content_lines.append(SLOT_MESSAGE.format(level=level, slot_idx=curr_slot + 1))
         content = '\n'.join(content_lines)
         return content
 
